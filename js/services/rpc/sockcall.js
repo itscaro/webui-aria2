@@ -96,7 +96,7 @@ function(_, JSON, name, utils, alerts) {
       }
 
       try {
-        sockRPC.sock = new WebSocket(sockRPC.scheme + '://' + conf.host + ':' + conf.port + '/jsonrpc');
+        sockRPC.sock = new WebSocket(sockRPC.scheme + '://' + conf.host + (conf.port && conf.port.length ? ':' + conf.port : '') + '/jsonrpc');
         sockRPC.sock.onopen = sockRPC.onopen;
         sockRPC.sock.onclose = sockRPC.onclose;
         sockRPC.sock.onerror = sockRPC.onerror;
