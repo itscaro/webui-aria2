@@ -5,14 +5,24 @@ angular
 ])
 .factory('$rpc', [
   '$syscall', '$globalTimeout', '$alerts', '$utils',
-  '$rootScope',
-function(syscall, time, alerts, utils, rootScope) {
+  '$rootScope', '$location',
+function(syscall, time, alerts, utils, rootScope, uri) {
 
   var subscriptions = []
     , configurations = [{ host: 'localhost', port: 6800, encrypt: false }]
     , currentConf = {}
     , timeout = null
     , forceNextUpdate = false;
+
+  if (['http', 'https'].indexOf(uri.protocol()) != -1) {
+    console.log(uri.host());
+    configurations.unshift({
+      host: uri.host(),
+      port: 6800,
+      encrypt: false
+    });
+    console.log(configurations);
+  }
 
   var cookieConf = utils.getCookie('aria2conf');
   if (cookieConf) configurations.unshift(cookieConf);
@@ -59,20 +69,27 @@ function(syscall, time, alerts, utils, rootScope) {
 
         utils.setCookie('aria2conf', currentConf);
 
+        var cbs = [];
         _.each(data.result, function(d, i) {
           var handle = subscriptions[i];
           if (handle) {
             if (d.code) {
               alerts.addAlert(d.message, 'error');
             }
-            handle.cb(d);
+            // run them later as the cb itself can mutate the subscriptions
+            cbs.push({cb: handle.cb, data: d});
             if (handle.once) {
               subscriptions[i] = null;
             }
           }
         });
 
-        rootScope.$apply();
+
+        _.each(cbs, function(hnd) {
+          hnd.cb(hnd.data);
+        });
+
+        rootScope.$digest();
 
         if (forceNextUpdate) {
           forceNextUpdate = false;
@@ -122,7 +139,7 @@ function(syscall, time, alerts, utils, rootScope) {
       cb = cb || angular.noop;
       params = params || [];
 
-      subscriptions.push({
+      subscriptions.unshift({
         once: true,
         name: 'aria2.' + name,
         params: params,

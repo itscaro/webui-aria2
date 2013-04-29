@@ -11,6 +11,7 @@ function(
   fsettings, activeInclude, waitingExclude
 ) {
   scope.active = [], scope.waiting = [], scope.stopped = [];
+  scope.gstats = {};
 
   // pause the download
   // d: the download ctx
@@ -28,12 +29,27 @@ function(
   // put it in stopped list if active,
   // otherwise permanantly remove it
   // d: the download ctx
-  scope.remove = function(d) {
+  scope.remove = function(d, cb) {
     var method = 'remove';
+
     if (scope.getType(d) == 'stopped')
       method = 'removeDownloadResult';
 
-    rpc.once(method, [d.gid]);
+    rpc.once(method, [d.gid], cb);
+
+    // also remove it from client cache assuming that it will be deleted in the aria2 list,
+    // but we could be wrong but the cache will update in next global update
+    var downloads = [scope.active, scope.waiting, scope.stopped], ind = -1, i;
+    for (i = 0; i < downloads.length; i++) {
+      ind = downloads[i].indexOf(d);
+      if (ind != -1) break;
+    }
+
+    if (ind == -1) {
+      return;
+    }
+
+    downloads[i].splice(ind, 1);
   }
 
   scope.restart = function(d) {
@@ -47,8 +63,8 @@ function(
       }).value();
 
     if (uris.length > 0) {
-      rpc.once('removeDownloadResult', [d.gid], function() {
-        rpc.once('addUri', uris);
+      scope.remove(d, function() {
+        rpc.once('addUri', uris, angular.noop, true);
       });
     }
   }
@@ -68,10 +84,90 @@ function(
     utils.mergeMap(data[0], scope.stopped, scope.getCtx);
   });
 
+  rpc.subscribe('getGlobalStat', [], function(data) {
+    scope.gstats = data[0];
+  });
+
+  rpc.once('getVersion', [], function(data) {
+    scope.miscellaneous = data[0];
+  });
+
+  // total number of downloads, updates dynamically as downloads are
+  // stored in scope
+  scope.totalDownloads = 0;
+
+  // download search filter
+  scope.downloadFilter = "";
+
+  scope.filterDownloads = function(downloads) {
+    var filter = scope.downloadFilter;
+    if (!filter.length) return downloads;
+    return _.filter(downloads, function(d) {
+      if (!d.files.length) return true;
+
+      return _.filter(d.files, function(f) {
+        return f.path.search(filter) != -1;
+      }).length;
+    });
+  };
+
+  // max downloads shown in one page
+  scope.pageSize = 10;
+
+  // current displayed page
+  scope.currentPage = 1;
+
+  scope.pageControlRadius = 3;
+
+  // total maximum pages
+  scope.totalPages = 0;
+
+  // total amount of downloads returned by aria2
+  scope.totalAria2Downloads = function() {
+    return scope.active.length
+      + scope.waiting.length
+      + scope.stopped.length;
+  }
+
   // actual downloads used by the view
   scope.getDownloads = function() {
-    return scope.active
-      .concat(scope.waiting).concat(scope.stopped);
+    var downloads =
+      scope.filterDownloads(
+        scope.active.concat( scope.waiting ).concat( scope.stopped )
+      )
+    ;
+
+    scope.totalDownloads = downloads.length;
+
+    scope.totalPages = Math.ceil(scope.totalDownloads / scope.pageSize)
+
+    // fix the bug when downloads are deleted until no left on a specific page
+    if (scope.currentPage > scope.totalPages)
+      scope.currentPage = scope.totalPages;
+
+    downloads = downloads.slice( (scope.currentPage - 1) * scope.pageSize );
+    downloads.splice( scope.pageSize );
+
+    return downloads;
+  }
+
+  scope.setPage = function(pageNumber) {
+    scope.currentPage = pageNumber;
+    return false;
+  }
+
+  // get the pages to be displayed
+  scope.getPages = function() {
+    var minPage = scope.currentPage - scope.pageControlRadius;
+
+    if (minPage < 1) minPage = 1;
+
+    var maxPage = scope.currentPage + scope.pageControlRadius;
+
+    if (maxPage > scope.totalPages)
+      maxPage = scope.totalPages;
+
+    return _.range(minPage, maxPage + 1);
   }
 
   // convert the donwload form aria2 to once used by the view,
@@ -104,8 +200,14 @@ function(
     return false;
   };
 
-  scope.hasStatus = function(d, status) {
-    return d.status == status;
+  scope.hasStatus = function hasStatus(d, status) {
+    if (_.isArray(status)) {
+      if (status.length == 0) return false;
+      return hasStatus(d, status[0]) || hasStatus(d, status.slice(1));
+    }
+    else {
+      return d.status == status;
+    }
   };
 
   // get time left for the download with
@@ -145,7 +247,7 @@ function(
   };
 
   scope.showSettings = function(d) {
-    var type = this.getType(d)
+    var type = scope.getType(d)
       , settings = {};
 
     rpc.once('getOption', [d.gid], function(data) {
