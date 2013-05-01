@@ -8,14 +8,25 @@ require_once 'jsonRpcClient.php';
 class Aria2 {
 
     protected $client;
+    protected $log = "/tmp/aria2.php.log";
 
     public function __construct() {
         $this->client = new jsonRpcClient('http://127.0.0.1:6800/jsonrpc');
     }
 
     protected function _exec($method, array $params) {
-        $return = $this->client->__call('aria2.' . $method, $params);
-        file_put_contents('aria2.php.log', var_export($result) . PHP_EOL, FILE_APPEND);
+        $return = false;
+        try {
+            $params = array_filter($params);
+            file_put_contents($this->log, "Calling aria.{$method} with parameters " . var_export(array_keys($params), 1) . PHP_EOL, FILE_APPEND);
+
+            //$params = array_filter($params);
+            $return = $this->client->__call('aria2.' . $method, $params);
+            file_put_contents($this->log, var_export($return, 1) . PHP_EOL, FILE_APPEND);
+        } catch (Exception $e) {
+            file_put_contents($this->log, var_export($e->getMessage(), 1) . PHP_EOL, FILE_APPEND);
+            error_log($e->getMessage());
+        }
         return $return;
     }
 

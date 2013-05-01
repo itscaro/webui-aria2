@@ -88,7 +88,7 @@ class jsonRpcClient {
 
         // prepares the request
         $request = array(
-            'jsonrpc' => '2.0',
+            'jsonrpc' => 2.0,
             'method' => $method,
             'params' => $params,
             'id' => $currentId
@@ -98,11 +98,13 @@ class jsonRpcClient {
         $this->debug && $this->debug.='***** Request *****' . "\n" . $request . "\n" . '***** End Of request *****' . "\n\n";
 
         // performs the HTTP POST
-        $opts = array('http' => array(
+        $opts = array(
+            'http' => array(
                 'method' => 'POST',
                 'header' => 'Content-type: application/json',
                 'content' => $request
-        ));
+            )
+        );
         $context = stream_context_create($opts);
         if ($fp = fopen($this->url, 'r', false, $context)) {
             $response = '';
